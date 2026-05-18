@@ -44,6 +44,7 @@ from statistics import mean
 
 DEFAULT_BINARY = "./rfid_gc_live"
 DEFAULT_RESULTS_CSV = "beer_pour_results.csv"
+DEFAULT_RUNS_DIR = "runs"      # per-test CSVs (one file per saved test)
 POUR_WINDOW_S = 15.0           # the 8–15s beer-pour window we count reads over
 EPC_LEARN_WINDOW_S = 3.0       # how long to sniff during EPC auto-learn
 READY_TIMEOUT_S = 15.0         # max time to wait for the reader's "Ready." line
@@ -422,11 +423,31 @@ def write_csv_row(csv_path: str, row: dict) -> None:
         w.writerow([row.get(k, "") for k in CSV_HEADER])
 
 
+def per_test_filename(end_ts: datetime, setup_idx: int, scenario: str,
+                      sub: int, interrupted: bool) -> str:
+    """Filesystem-safe filename for a single test's CSV."""
+    stamp = end_ts.strftime("%Y-%m-%d_%H-%M-%S")
+    tag = "_interrupted" if interrupted else ""
+    return f"{stamp}__setup{setup_idx}_scenario{scenario}_sub{sub}{tag}.csv"
+
+
+def write_per_test_csv(path: str, row: dict) -> None:
+    """Write a single-row CSV (header + one data row) for one test."""
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(CSV_HEADER)
+        w.writerow([row.get(k, "") for k in CSV_HEADER])
+
+
 # ----------------------------------------------------------------------------
 # Main loop
 # ----------------------------------------------------------------------------
 
-def run_one_test(binary: str, cup1_epc: str, cup2_epc: str, csv_path: str) -> str:
+def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
+                 csv_path: str, runs_dir: str) -> str:
     (setup_idx, setup_name, scenario, cup_state, dt_state,
      power_label, power_mW, sub) = ask_test_params()
 
@@ -456,6 +477,7 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str, csv_path: str) -> st
             t0 = time.monotonic()
             sweeps, interrupted = r.collect(POUR_WINDOW_S, allow_interrupt=True)
             elapsed = time.monotonic() - t0
+            end_ts = datetime.now()
         if interrupted:
             print(f"\n  *** INTERRUPTED *** Captured {len(sweeps)} sweeps in {elapsed:.1f}s "
                   f"(of {POUR_WINDOW_S:.0f}s planned).")
@@ -495,7 +517,7 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str, csv_path: str) -> st
         notes = f"[interrupted at {elapsed:.1f}s]"
 
     row = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "timestamp": end_ts.isoformat(timespec="seconds"),
         "setup_idx": setup_idx,
         "setup_name": setup_name,
         "scenario": scenario,
@@ -514,7 +536,13 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str, csv_path: str) -> st
         **stats,
     }
     write_csv_row(csv_path, row)
-    print(f"  Saved to {csv_path}.")
+    per_test_path = os.path.join(
+        runs_dir,
+        per_test_filename(end_ts, setup_idx, scenario, sub, interrupted),
+    )
+    write_per_test_csv(per_test_path, row)
+    print(f"  Appended to : {csv_path}")
+    print(f"  Per-test CSV: {per_test_path}")
     return "saved"
 
 
@@ -525,7 +553,10 @@ def main() -> int:
     p.add_argument("--binary", default=DEFAULT_BINARY,
                    help=f"Path to the reader binary (default: {DEFAULT_BINARY})")
     p.add_argument("--csv", default=DEFAULT_RESULTS_CSV,
-                   help=f"Output CSV path (default: {DEFAULT_RESULTS_CSV})")
+                   help=f"Master append-only CSV (default: {DEFAULT_RESULTS_CSV})")
+    p.add_argument("--runs-dir", default=DEFAULT_RUNS_DIR,
+                   help=f"Folder where per-test timestamped CSVs are written "
+                        f"(default: {DEFAULT_RUNS_DIR}/)")
     p.add_argument("--cup1-epc", help="Skip auto-learn: provide Cup 1 EPC directly")
     p.add_argument("--cup2-epc", help="Skip auto-learn: provide Cup 2 EPC directly")
     p.add_argument("--learn-power", type=int, default=30,
@@ -542,7 +573,8 @@ def main() -> int:
     print("  Beer Pour Testing — wrapper for ./rfid_gc_live")
     print("=" * 64)
     print(f"  Binary       : {args.binary}")
-    print(f"  Results CSV  : {args.csv}")
+    print(f"  Master CSV   : {args.csv}")
+    print(f"  Per-test dir : {args.runs_dir}/")
     print(f"  Pour window  : {POUR_WINDOW_S:.0f} s   ({int(POUR_WINDOW_S * 10)} sweeps max at 100 ms cycle)")
     print(f"  Power map    : Low=30 mW, Medium=170 mW, High=316 mW")
     print()
@@ -564,7 +596,8 @@ def main() -> int:
             print(f"          Cup 2 = {cup2_epc}")
 
         while True:
-            result = run_one_test(args.binary, cup1_epc, cup2_epc, args.csv)
+            result = run_one_test(args.binary, cup1_epc, cup2_epc,
+                                  args.csv, args.runs_dir)
             if result == "retry":
                 continue
             again = input("\n  Run another test? [Y/n]: ").strip().lower()

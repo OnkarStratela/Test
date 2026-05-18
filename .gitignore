@@ -12,3 +12,8 @@ rfid_gc_live.exe
 *.swp
 .DS_Store
 Thumbs.db
+
+# Test results — generated on the Pi, not source
+runs/
+beer_pour_results.csv
+__pycache__/
