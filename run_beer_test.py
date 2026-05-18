@@ -585,7 +585,8 @@ def main() -> int:
     print(f"  Binary       : {args.binary}")
     print(f"  Master CSV   : {args.csv}")
     print(f"  Per-test dir : {args.runs_dir}/")
-    print(f"  Pour window  : {POUR_WINDOW_S:.0f} s   ({int(POUR_WINDOW_S * 10)} sweeps max at 100 ms cycle)")
+    print(f"  Pour window  : {POUR_WINDOW_S:.0f} s   (reader loop ~5 Hz on this hardware, "
+          f"so expect ~{int(POUR_WINDOW_S * 5)} sweeps)")
     print(f"  Power map    : Low=30 mW, Medium=170 mW, High=316 mW")
     print()
 
