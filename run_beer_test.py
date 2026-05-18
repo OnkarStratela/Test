@@ -95,6 +95,7 @@ CSV_HEADER = [
     "cup2_ant1_reads", "cup2_ant1_avg_rssi",
     "cup2_ant2_reads", "cup2_ant2_avg_rssi",
     "misreads", "overlaps",
+    "interrupted",
     "verdict",
     "cup1_epc", "cup2_epc",
     "notes",
@@ -190,25 +191,38 @@ class RFIDReader:
             "Banner so far:\n" + "\n".join(self.banner)
         )
 
-    def collect(self, duration_s: float) -> list[dict]:
-        """Read sweep lines for `duration_s` seconds. Returns parsed sweeps."""
+    def collect(self, duration_s: float, allow_interrupt: bool = False
+                ) -> tuple[list[dict], bool]:
+        """Read sweep lines for `duration_s` seconds.
+
+        Returns (sweeps, interrupted). When `allow_interrupt` is True a
+        Ctrl+C during the window is caught and the partial list is
+        returned with interrupted=True; otherwise the KeyboardInterrupt
+        propagates normally.
+        """
         sweeps: list[dict] = []
         deadline = time.monotonic() + duration_s
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            try:
-                line = self.q.get(timeout=remaining)
-            except queue.Empty:
-                break
-            if line is None:
-                break
-            clean = strip_ansi(line).rstrip()
-            if clean == "[]" or clean.startswith("[TX="):
-                tx, reads = parse_sweep_line(line)
-                sweeps.append({"tx": tx, "reads": reads})
-        return sweeps
+        interrupted = False
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                try:
+                    line = self.q.get(timeout=remaining)
+                except queue.Empty:
+                    break
+                if line is None:
+                    break
+                clean = strip_ansi(line).rstrip()
+                if clean == "[]" or clean.startswith("[TX="):
+                    tx, reads = parse_sweep_line(line)
+                    sweeps.append({"tx": tx, "reads": reads})
+        except KeyboardInterrupt:
+            if not allow_interrupt:
+                raise
+            interrupted = True
+        return sweeps, interrupted
 
     def __exit__(self, *exc) -> None:
         if self.proc and self.proc.poll() is None:
@@ -234,7 +248,7 @@ def learn_epc(binary: str, label: str, learn_power_mW: int = 30) -> str:
         print(f"\n  Place ONLY {label} on the antenna tray, remove the other cup.")
         input(f"  Press Enter to sniff for {EPC_LEARN_WINDOW_S:.0f}s at {learn_power_mW} mW… ")
         with RFIDReader(binary, learn_power_mW) as r:
-            sweeps = r.collect(EPC_LEARN_WINDOW_S)
+            sweeps, _ = r.collect(EPC_LEARN_WINDOW_S)
         counts: Counter[str] = Counter()
         for sw in sweeps:
             for _src, _rssi, epc in sw["reads"]:
@@ -373,14 +387,18 @@ def ask_test_params() -> tuple[int, str, str, str, str, str, int, int]:
 
 
 def print_summary(stats: dict, scenario: str, sub: int, power_mW: int,
-                  cup1_epc: str, cup2_epc: str, vrd: str) -> None:
+                  cup1_epc: str, cup2_epc: str, vrd: str,
+                  interrupted: bool = False, elapsed_s: float = POUR_WINDOW_S) -> None:
     rssi = lambda v: f"{v:>7}" if v == "" else f"{v:>7.2f}" if isinstance(v, float) else f"{v:>7}"
     print()
     print("=" * 64)
     print(f"  Result — Scenario {scenario}, Sub {sub}, Power {power_mW} mW")
+    if interrupted:
+        print(f"  *** INTERRUPTED at {elapsed_s:.1f}s of {POUR_WINDOW_S:.0f}s ***")
     print(f"  Cup 1 EPC: {cup1_epc}")
     print(f"  Cup 2 EPC: {cup2_epc}")
-    print(f"  Total sweeps in {POUR_WINDOW_S:.0f}s window: {stats['total_sweeps']}")
+    window_label = f"{elapsed_s:.1f}s (interrupted)" if interrupted else f"{POUR_WINDOW_S:.0f}s"
+    print(f"  Total sweeps in {window_label} window: {stats['total_sweeps']}")
     print("-" * 64)
     print(f"             |   Ant1 (Source_0)         |   Ant2 (Source_1)")
     print(f"  -----------+---------------------------+---------------------------")
@@ -425,34 +443,56 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str, csv_path: str) -> st
     print("-" * 64)
     input("\n  Set up the cups/driptray physically, then press Enter to start the 15s pour window… ")
 
+    interrupted = False
+    elapsed = 0.0
+    sweeps: list[dict] = []
     try:
         with RFIDReader(binary, power_mW) as r:
             if r.banner_power_mW is not None and r.banner_power_mW != power_mW:
                 print(f"  WARNING: reader banner says {r.banner_power_mW} mW, "
                       f"this test expects {power_mW} mW.")
             print(f"\n  Reader ready. Counting for {POUR_WINDOW_S:.0f}s — simulate the pour now…")
+            print("  (Press Ctrl+C to stop early; you'll be asked to keep or discard the partial result.)")
             t0 = time.monotonic()
-            sweeps = r.collect(POUR_WINDOW_S)
+            sweeps, interrupted = r.collect(POUR_WINDOW_S, allow_interrupt=True)
             elapsed = time.monotonic() - t0
-        print(f"  Captured {len(sweeps)} sweeps in {elapsed:.1f}s.")
+        if interrupted:
+            print(f"\n  *** INTERRUPTED *** Captured {len(sweeps)} sweeps in {elapsed:.1f}s "
+                  f"(of {POUR_WINDOW_S:.0f}s planned).")
+        else:
+            print(f"  Captured {len(sweeps)} sweeps in {elapsed:.1f}s.")
     except Exception as e:
         print(f"\n  ERROR running reader: {e}")
         return "error"
 
     stats = compute_stats(sweeps, cup1_epc, cup2_epc, sub)
     vrd = verdict(stats, sub)
-    print_summary(stats, scenario, sub, power_mW, cup1_epc, cup2_epc, vrd)
+    print_summary(stats, scenario, sub, power_mW, cup1_epc, cup2_epc, vrd,
+                  interrupted=interrupted, elapsed_s=elapsed)
+
+    if interrupted:
+        prompt_text = (f"\n  Test was interrupted at {elapsed:.1f}s of {POUR_WINDOW_S:.0f}s.\n"
+                       "  Keep this partial result, discard, or retry? [k]eep / [d]iscard / [r]etry: ")
+    else:
+        prompt_text = "  Save this row? [y]es / [n]o / [r]etry: "
 
     notes = input("\n  Notes (optional, press Enter to skip): ").strip()
     while True:
-        choice = input("  Save this row? [y]es / [n]o / [r]etry: ").strip().lower()
-        if choice in {"y", "n", "r", "yes", "no", "retry"}:
+        choice = input(prompt_text).strip().lower()
+        if interrupted and choice in {"k", "keep", "d", "discard", "r", "retry"}:
+            break
+        if not interrupted and choice in {"y", "n", "r", "yes", "no", "retry"}:
             break
     if choice.startswith("r"):
         return "retry"
-    if choice.startswith("n"):
+    if choice.startswith("d") or choice.startswith("n"):
         print("  Discarded.")
         return "discarded"
+
+    if interrupted and notes:
+        notes = f"[interrupted at {elapsed:.1f}s] {notes}"
+    elif interrupted:
+        notes = f"[interrupted at {elapsed:.1f}s]"
 
     row = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -465,7 +505,8 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str, csv_path: str) -> st
         "power_mW": power_mW,
         "sub": sub,
         "sub_layout": layout,
-        "window_s": int(POUR_WINDOW_S),
+        "window_s": round(elapsed, 1) if interrupted else int(POUR_WINDOW_S),
+        "interrupted": "yes" if interrupted else "no",
         "verdict": vrd,
         "cup1_epc": cup1_epc,
         "cup2_epc": cup2_epc,
