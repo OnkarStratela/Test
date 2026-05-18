@@ -192,14 +192,16 @@ class RFIDReader:
             "Banner so far:\n" + "\n".join(self.banner)
         )
 
-    def collect(self, duration_s: float, allow_interrupt: bool = False
-                ) -> tuple[list[dict], bool]:
+    def collect(self, duration_s: float, allow_interrupt: bool = False,
+                echo: bool = False) -> tuple[list[dict], bool]:
         """Read sweep lines for `duration_s` seconds.
 
         Returns (sweeps, interrupted). When `allow_interrupt` is True a
         Ctrl+C during the window is caught and the partial list is
         returned with interrupted=True; otherwise the KeyboardInterrupt
-        propagates normally.
+        propagates normally. When `echo` is True, every sweep line is
+        also written to stdout with its original ANSI colour codes,
+        mirroring what ./rfid_gc_live prints when run directly.
         """
         sweeps: list[dict] = []
         deadline = time.monotonic() + duration_s
@@ -216,7 +218,11 @@ class RFIDReader:
                 if line is None:
                     break
                 clean = strip_ansi(line).rstrip()
-                if clean == "[]" or clean.startswith("[TX="):
+                is_sweep = clean == "[]" or clean.startswith("[TX=")
+                if echo and is_sweep:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                if is_sweep:
                     tx, reads = parse_sweep_line(line)
                     sweeps.append({"tx": tx, "reads": reads})
         except KeyboardInterrupt:
@@ -249,7 +255,9 @@ def learn_epc(binary: str, label: str, learn_power_mW: int = 30) -> str:
         print(f"\n  Place ONLY {label} on the antenna tray, remove the other cup.")
         input(f"  Press Enter to sniff for {EPC_LEARN_WINDOW_S:.0f}s at {learn_power_mW} mW… ")
         with RFIDReader(binary, learn_power_mW) as r:
-            sweeps, _ = r.collect(EPC_LEARN_WINDOW_S)
+            print(f"  --- live reader output (sniffing {EPC_LEARN_WINDOW_S:.0f}s) ---")
+            sweeps, _ = r.collect(EPC_LEARN_WINDOW_S, echo=True)
+            print(f"  --- end of live output ---")
         counts: Counter[str] = Counter()
         for sw in sweeps:
             for _src, _rssi, epc in sw["reads"]:
@@ -474,10 +482,12 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
                       f"this test expects {power_mW} mW.")
             print(f"\n  Reader ready. Counting for {POUR_WINDOW_S:.0f}s — simulate the pour now…")
             print("  (Press Ctrl+C to stop early; you'll be asked to keep or discard the partial result.)")
+            print(f"  --- live reader output ---")
             t0 = time.monotonic()
-            sweeps, interrupted = r.collect(POUR_WINDOW_S, allow_interrupt=True)
+            sweeps, interrupted = r.collect(POUR_WINDOW_S, allow_interrupt=True, echo=True)
             elapsed = time.monotonic() - t0
             end_ts = datetime.now()
+            print(f"  --- end of live output ---")
         if interrupted:
             print(f"\n  *** INTERRUPTED *** Captured {len(sweeps)} sweeps in {elapsed:.1f}s "
                   f"(of {POUR_WINDOW_S:.0f}s planned).")
