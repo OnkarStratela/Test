@@ -59,6 +59,7 @@ SETUPS = [
 ]
 
 # Scenario letter -> (cup_state, driptray_state, power_label, power_mW)
+# Kept for reverse lookup so the brainstorm CSV's A–I labels still map.
 SCENARIOS: dict[str, tuple[str, str, str, int]] = {
     "A": ("Empty", "Empty", "Low",    30),
     "B": ("Full",  "Empty", "Low",    30),
@@ -70,6 +71,28 @@ SCENARIOS: dict[str, tuple[str, str, str, int]] = {
     "H": ("Full",  "Empty", "High",   316),
     "I": ("Full",  "Full",  "High",   316),
 }
+
+# The three physically-meaningful cup × driptray combinations.
+# (Empty cup + Full driptray is excluded — the driptray drains.)
+CUP_DRIPTRAY_COMBOS: list[tuple[str, str]] = [
+    ("Empty", "Empty"),
+    ("Full",  "Empty"),
+    ("Full",  "Full"),
+]
+
+# Reader power levels we sweep across.
+POWER_LEVELS: list[tuple[str, int]] = [
+    ("Low",    30),
+    ("Medium", 170),
+    ("High",   316),
+]
+
+
+def scenario_letter_for(cup_state: str, dt_state: str, power_label: str) -> str:
+    for letter, (c, d, lbl, _mw) in SCENARIOS.items():
+        if c == cup_state and d == dt_state and lbl == power_label:
+            return letter
+    return "?"
 
 # Sub-scenario number -> (ant1_state, ant2_state, cup_layout, what_counts_as_misread)
 SUBS: dict[int, tuple[str, str, str, str]] = {
@@ -378,12 +401,19 @@ def ask_test_params() -> tuple[int, str, str, str, str, str, int, int]:
     setup_idx = int(setup_choice)
     setup_name = SETUPS[setup_idx - 1]
 
-    scenario_choice = menu(
-        "Scenario:",
-        [(k, f"Cup={v[0]:<5} Driptray={v[1]:<5} Power={v[2]} ({v[3]} mW)")
-         for k, v in SCENARIOS.items()],
-    ).upper()
-    cup_state, dt_state, power_label, power_mW = SCENARIOS[scenario_choice]
+    combo_choice = menu(
+        "Cup / Driptray state:",
+        [(str(i + 1), f"Cup={c:<5}  Driptray={d}")
+         for i, (c, d) in enumerate(CUP_DRIPTRAY_COMBOS)],
+    )
+    cup_state, dt_state = CUP_DRIPTRAY_COMBOS[int(combo_choice) - 1]
+
+    power_choice = menu(
+        "Reader power:",
+        [(str(i + 1), f"{lbl:<6}  =  {mw} mW")
+         for i, (lbl, mw) in enumerate(POWER_LEVELS)],
+    )
+    power_label, power_mW = POWER_LEVELS[int(power_choice) - 1]
 
     sub_choice = menu(
         "Sub-scenario:",
@@ -392,7 +422,8 @@ def ask_test_params() -> tuple[int, str, str, str, str, str, int, int]:
     )
     sub = int(sub_choice)
 
-    return setup_idx, setup_name, scenario_choice, cup_state, dt_state, power_label, power_mW, sub
+    scenario_letter = scenario_letter_for(cup_state, dt_state, power_label)
+    return setup_idx, setup_name, scenario_letter, cup_state, dt_state, power_label, power_mW, sub
 
 
 def print_summary(stats: dict, scenario: str, sub: int, power_mW: int,
@@ -464,11 +495,12 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
     print("\n" + "-" * 64)
     print("  About to run:")
     print(f"    Setup       : {setup_idx}. {setup_name}")
-    print(f"    Scenario    : {scenario}  (Cup={cup_state}, Driptray={dt_state})")
+    print(f"    Cup/Driptray: Cup={cup_state}, Driptray={dt_state}")
     print(f"    Power       : {power_label} = {power_mW} mW   (wrapper will pass this to ./rfid_gc_live)")
     print(f"    Sub-scenario: {sub}  (Ant1={ant1_state}, Ant2={ant2_state})")
     print(f"    Cup layout  : {layout}")
     print(f"    Misread =   : {misread_rule}")
+    print(f"    Scenario tag: {scenario}   (matches '{scenario}' in your brainstorm CSV)")
     print("-" * 64)
     input("\n  Set up the cups/driptray physically, then press Enter to start the 15s pour window… ")
 
