@@ -13,7 +13,8 @@ rfid_gc_live.exe
 .DS_Store
 Thumbs.db
 
-# Test results — generated on the Pi, not source
-runs/
-beer_pour_results.csv
+# Python bytecode cache
 __pycache__/
+
+# Test results from the Pi (runs/ and beer_pour_results.csv) are tracked
+# in git so they can be pushed back to the repo from the Pi.
