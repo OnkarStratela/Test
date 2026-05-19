@@ -1,0 +1,23 @@
+Beer Pour Testing - 19-05-2026,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,
+Setups to Test,,,,,,Results Table,,,,,,,,,,,
+2 fins underneath,,,,,,,,Ant1,,,,Ant2,,,,Reliability,
+Removing ceiling metal,,,,,,Scenario,Sub Scenario,Cup 1 (Average RSSI),Cup 1 Count per 20,Cup 2 (Average RSSI),Cup 2 Count per 20,Cup 1 (Average RSSI),Cup 1 Count per 20,Cup 2 (Average RSSI),Cup 2 Count per 20,Misreads,Overlaps
+Removing ceiling and side metal,,,,,,A,3,,,,,,,,,40,0
+Angle antennas underneath,,,,,,B,3,,,,,,,,,40,0
+,,,,,,C,3,,,,,,,,,40,0
+Scenarios to test for each setup,,,,,,D,3,,,,,,,,,40,0
+,Cup,Driptray,Power,,,E,3,,,,,,,,,40,0
+A,Empty,Empty,Low,,,F,3,,,,,,,,,40,0
+B,Full,Empty,Low,,,G,3,,,,,,,,,40,0
+C,Full,Full,Low,,,H,3,,,,,,,,,40,0
+D,Empty,Empty,Medium,,,I,3,,,,,,,,,40,0
+E,Full,Empty,Medium,,,,,,,,,,,,,,
+F,Full,Full,Medium,,,,,,,,,,,,,,
+G,Empty,Empty,High,,,,,,,,,,,,,,
+H,Full,Empty,High,,,,,,,,,,,,,,
+I,Full,Full,High,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,
+Sub Scenarios,,,,,,,,,,,,,,,,,
+,Cup 1,Cup 2,,,,,,,,,,,,,,,
+3,Ant1,Ant2,,,,,,,,,,,,,,,

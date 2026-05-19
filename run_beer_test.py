@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Beer Pour Testing — interactive wrapper for ./rfid_gc_live.
 
-Runs the structured A-I x 1-3 x 4-setup test plan from
-'Beer Pour Testing(Sheet1).csv'. For each test it:
+Runs the structured A-I x 4-setup test plan from
+'Beer Pour Testing(Sheet1).csv'. Both antennas are always active, matching
+the real-life dispenser configuration. For each test it:
 
-  1. asks Setup / Scenario / Sub-scenario (menus)
+  1. asks Setup / Scenario (menus)
   2. launches `./rfid_gc_live <power_mW>` at the right power for the scenario
   3. counts reads for a 15-second pour window
   4. computes per-antenna reads & avg RSSI, misreads, overlaps
@@ -94,18 +95,14 @@ def scenario_letter_for(cup_state: str, dt_state: str, power_label: str) -> str:
             return letter
     return "?"
 
-# Sub-scenario number -> (ant1_state, ant2_state, cup_layout, what_counts_as_misread)
-SUBS: dict[int, tuple[str, str, str, str]] = {
-    1: ("ON",  "OFF (logical)",
-        "Place ONLY Cup 1 on the Ant1 side. Cup 2 is removed.",
-        "Any read by Ant2 (Source_1) OR Ant1 reading a non-Cup-1 tag."),
-    2: ("OFF (logical)", "ON",
-        "Place ONLY Cup 2 on the Ant2 side. Cup 1 is removed.",
-        "Any read by Ant1 (Source_0) OR Ant2 reading a non-Cup-2 tag."),
-    3: ("ON",  "ON",
-        "Cup 1 on the Ant1 side, Cup 2 on the Ant2 side.",
-        "Ant1 reading Cup 2's EPC OR Ant2 reading Cup 1's EPC."),
-}
+# Single supported sub-scenario: both antennas live, one cup per side.
+# Sub-scenario 1 (only Ant1) and 2 (only Ant2) were removed because the
+# production dispenser always has both antennas running.
+SUB_ID = 3
+SUB_ANT1_STATE = "ON"
+SUB_ANT2_STATE = "ON"
+SUB_LAYOUT = "Cup 1 on the Ant1 side, Cup 2 on the Ant2 side."
+SUB_MISREAD_RULE = "Ant1 reading Cup 2's EPC OR Ant2 reading Cup 1's EPC."
 
 CSV_HEADER = [
     "timestamp",
@@ -307,7 +304,6 @@ def compute_stats(
     sweeps: list[dict],
     cup1_epc: str,
     cup2_epc: str,
-    sub: int,
 ) -> dict:
     total = len(sweeps)
     rssi_lists: dict[tuple[int, str], list[float]] = defaultdict(list)
@@ -324,24 +320,12 @@ def compute_stats(
         if any(0 in s and 1 in s for s in srcs_per_epc.values()):
             overlaps += 1
 
-        # Misreads per sub-scenario
+        # Misread: an antenna read the other side's cup.
         for src, _rssi, epc in sw["reads"]:
-            if sub == 1:
-                # Expected: Ant1 reads Cup1. Cup2 absent. Ant2 logically off.
-                if src == 1:
-                    misreads += 1
-                elif src == 0 and epc != cup1_epc:
-                    misreads += 1
-            elif sub == 2:
-                if src == 0:
-                    misreads += 1
-                elif src == 1 and epc != cup2_epc:
-                    misreads += 1
-            elif sub == 3:
-                if src == 0 and epc != cup1_epc:
-                    misreads += 1
-                elif src == 1 and epc != cup2_epc:
-                    misreads += 1
+            if src == 0 and epc != cup1_epc:
+                misreads += 1
+            elif src == 1 and epc != cup2_epc:
+                misreads += 1
 
     def reads_and_avg(src: int, epc: str) -> tuple[int, float | str]:
         vals = rssi_lists.get((src, epc), [])
@@ -363,16 +347,11 @@ def compute_stats(
     }
 
 
-def verdict(stats: dict, sub: int) -> str:
+def verdict(stats: dict) -> str:
     if stats["misreads"] > 0 or stats["overlaps"] > 0:
         return "FAIL"
     total = stats["total_sweeps"] or 1
-    if sub == 1:
-        rate = stats["cup1_ant1_reads"] / total
-    elif sub == 2:
-        rate = stats["cup2_ant2_reads"] / total
-    else:  # sub == 3
-        rate = (stats["cup1_ant1_reads"] + stats["cup2_ant2_reads"]) / (2 * total)
+    rate = (stats["cup1_ant1_reads"] + stats["cup2_ant2_reads"]) / (2 * total)
     return "PASS" if rate >= PASS_READ_RATE else "WEAK"
 
 
@@ -393,7 +372,7 @@ def menu(title: str, options: list[tuple[str, str]]) -> str:
         print("  Invalid choice — try one of:", ", ".join(k for k, _ in options))
 
 
-def ask_test_params() -> tuple[int, str, str, str, str, str, int, int]:
+def ask_test_params() -> tuple[int, str, str, str, str, str, int]:
     setup_choice = menu(
         "Setup:",
         [(str(i + 1), name) for i, name in enumerate(SETUPS)],
@@ -415,24 +394,17 @@ def ask_test_params() -> tuple[int, str, str, str, str, str, int, int]:
     )
     power_label, power_mW = POWER_LEVELS[int(power_choice) - 1]
 
-    sub_choice = menu(
-        "Sub-scenario:",
-        [(str(k), f"Ant1={v[0]:<14}  Ant2={v[1]:<14}  |  {v[2]}")
-         for k, v in SUBS.items()],
-    )
-    sub = int(sub_choice)
-
     scenario_letter = scenario_letter_for(cup_state, dt_state, power_label)
-    return setup_idx, setup_name, scenario_letter, cup_state, dt_state, power_label, power_mW, sub
+    return setup_idx, setup_name, scenario_letter, cup_state, dt_state, power_label, power_mW
 
 
-def print_summary(stats: dict, scenario: str, sub: int, power_mW: int,
+def print_summary(stats: dict, scenario: str, power_mW: int,
                   cup1_epc: str, cup2_epc: str, vrd: str,
                   interrupted: bool = False, elapsed_s: float = POUR_WINDOW_S) -> None:
     rssi = lambda v: f"{v:>7}" if v == "" else f"{v:>7.2f}" if isinstance(v, float) else f"{v:>7}"
     print()
     print("=" * 64)
-    print(f"  Result — Scenario {scenario}, Sub {sub}, Power {power_mW} mW")
+    print(f"  Result — Scenario {scenario}, Power {power_mW} mW")
     if interrupted:
         print(f"  *** INTERRUPTED at {elapsed_s:.1f}s of {POUR_WINDOW_S:.0f}s ***")
     print(f"  Cup 1 EPC: {cup1_epc}")
@@ -463,11 +435,11 @@ def write_csv_row(csv_path: str, row: dict) -> None:
 
 
 def per_test_filename(end_ts: datetime, setup_idx: int, scenario: str,
-                      sub: int, interrupted: bool) -> str:
+                      interrupted: bool) -> str:
     """Filesystem-safe filename for a single test's CSV."""
     stamp = end_ts.strftime("%Y-%m-%d_%H-%M-%S")
     tag = "_interrupted" if interrupted else ""
-    return f"{stamp}__setup{setup_idx}_scenario{scenario}_sub{sub}{tag}.csv"
+    return f"{stamp}__setup{setup_idx}_scenario{scenario}{tag}.csv"
 
 
 def write_per_test_csv(path: str, row: dict) -> None:
@@ -488,18 +460,16 @@ def write_per_test_csv(path: str, row: dict) -> None:
 def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
                  csv_path: str, runs_dir: str) -> str:
     (setup_idx, setup_name, scenario, cup_state, dt_state,
-     power_label, power_mW, sub) = ask_test_params()
-
-    ant1_state, ant2_state, layout, misread_rule = SUBS[sub]
+     power_label, power_mW) = ask_test_params()
 
     print("\n" + "-" * 64)
     print("  About to run:")
     print(f"    Setup       : {setup_idx}. {setup_name}")
     print(f"    Cup/Driptray: Cup={cup_state}, Driptray={dt_state}")
     print(f"    Power       : {power_label} = {power_mW} mW   (wrapper will pass this to ./rfid_gc_live)")
-    print(f"    Sub-scenario: {sub}  (Ant1={ant1_state}, Ant2={ant2_state})")
-    print(f"    Cup layout  : {layout}")
-    print(f"    Misread =   : {misread_rule}")
+    print(f"    Antennas    : Ant1={SUB_ANT1_STATE}, Ant2={SUB_ANT2_STATE}  (both always live)")
+    print(f"    Cup layout  : {SUB_LAYOUT}")
+    print(f"    Misread =   : {SUB_MISREAD_RULE}")
     print(f"    Scenario tag: {scenario}   (matches '{scenario}' in your brainstorm CSV)")
     print("-" * 64)
     input("\n  Set up the cups/driptray physically, then press Enter to start the 15s pour window… ")
@@ -529,9 +499,9 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
         print(f"\n  ERROR running reader: {e}")
         return "error"
 
-    stats = compute_stats(sweeps, cup1_epc, cup2_epc, sub)
-    vrd = verdict(stats, sub)
-    print_summary(stats, scenario, sub, power_mW, cup1_epc, cup2_epc, vrd,
+    stats = compute_stats(sweeps, cup1_epc, cup2_epc)
+    vrd = verdict(stats)
+    print_summary(stats, scenario, power_mW, cup1_epc, cup2_epc, vrd,
                   interrupted=interrupted, elapsed_s=elapsed)
 
     if interrupted:
@@ -567,8 +537,8 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
         "driptray_state": dt_state,
         "power_label": power_label,
         "power_mW": power_mW,
-        "sub": sub,
-        "sub_layout": layout,
+        "sub": SUB_ID,
+        "sub_layout": SUB_LAYOUT,
         "window_s": round(elapsed, 1) if interrupted else int(POUR_WINDOW_S),
         "interrupted": "yes" if interrupted else "no",
         "verdict": vrd,
@@ -580,7 +550,7 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
     write_csv_row(csv_path, row)
     per_test_path = os.path.join(
         runs_dir,
-        per_test_filename(end_ts, setup_idx, scenario, sub, interrupted),
+        per_test_filename(end_ts, setup_idx, scenario, interrupted),
     )
     write_per_test_csv(per_test_path, row)
     print(f"  Appended to : {csv_path}")
