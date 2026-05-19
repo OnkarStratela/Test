@@ -65,7 +65,36 @@ Colours on **non-empty** lines:
 | `rfid_gc_live.c` | The scanner program |
 | `compile_gc.sh`  | Compiles `rfid_gc_live.c` against the CAEN library |
 | `run_gc.sh`      | Fixes USB perms, compiles, then runs the scanner |
+| `run_beer_test.py` | Interactive wrapper that runs the structured test plan |
 | `SRC/`           | CAEN light library sources/headers (do not modify) |
+| `results/`       | One CSV per test setup; every saved test row is appended to the matching file |
+| `runs/`          | One CSV per individual saved test (timestamped) |
+
+## Test plan
+
+The `run_beer_test.py` wrapper sweeps three test setups against nine
+scenarios (A–I = three fill states × three power levels).
+
+**Setups** (top-level test scenarios):
+
+1. Metal Casings
+2. Antennas at an Angle
+3. Flat Antennas with Separation
+
+**Sub-scenarios** (cup × driptray fill state, where *Full* means liquid is
+present):
+
+| Sub | Cup | Driptray | Description |
+|-----|------|---------|-------------|
+| 1   | Full  | Empty  | Drip tray empty - cup full |
+| 2   | Empty | Full   | Cup empty - drip tray full |
+| 3   | Full  | Full   | Drip tray full - cup full  |
+
+Each saved test row is written to **three** places:
+
+- `beer_pour_results.csv` — master append-only log (all setups in one file)
+- `results/<setup_name>.csv` — one CSV per setup (e.g. `results/Metal Casings.csv`)
+- `runs/<timestamp>__setupN_scenarioX.csv` — one CSV per individual test
 
 ## How to run (Linux)
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Beer Pour Testing — interactive wrapper for ./rfid_gc_live.
 
-Runs the structured A-I x 4-setup test plan from
+Runs the structured A-I x 3-setup test plan from
 'Beer Pour Testing(Sheet1).csv'. Both antennas are always active, matching
 the real-life dispenser configuration. For each test it:
 
@@ -9,7 +9,10 @@ the real-life dispenser configuration. For each test it:
   2. launches `./rfid_gc_live <power_mW>` at the right power for the scenario
   3. counts reads for a 15-second pour window
   4. computes per-antenna reads & avg RSSI, misreads, overlaps
-  5. appends a row to beer_pour_results.csv
+  5. appends a row to:
+       - beer_pour_results.csv          (master, all setups)
+       - results/<setup_name>.csv       (one file per test setup)
+       - runs/<timestamp>__setupN_...csv (one file per saved test)
 
 The C binary and its launch/compile scripts are NOT modified. This wrapper
 just spawns `./rfid_gc_live` and reads its stdout.
@@ -45,40 +48,41 @@ from statistics import mean
 
 DEFAULT_BINARY = "./rfid_gc_live"
 DEFAULT_RESULTS_CSV = "beer_pour_results.csv"
-DEFAULT_RUNS_DIR = "runs"      # per-test CSVs (one file per saved test)
-POUR_WINDOW_S = 15.0           # the 8–15s beer-pour window we count reads over
-EPC_LEARN_WINDOW_S = 3.0       # how long to sniff during EPC auto-learn
-READY_TIMEOUT_S = 15.0         # max time to wait for the reader's "Ready." line
-PASS_READ_RATE = 0.80          # expected-antenna reads must hit this fraction
+DEFAULT_RUNS_DIR = "runs"          # per-test CSVs (one file per saved test)
+DEFAULT_RESULTS_DIR = "results"    # one CSV per setup (appended to after each test)
+POUR_WINDOW_S = 15.0               # the 8–15s beer-pour window we count reads over
+EPC_LEARN_WINDOW_S = 3.0           # how long to sniff during EPC auto-learn
+READY_TIMEOUT_S = 15.0             # max time to wait for the reader's "Ready." line
+PASS_READ_RATE = 0.80              # expected-antenna reads must hit this fraction
 
 # Setup index -> human label
 SETUPS = [
-    "2 fins underneath",
-    "Removing ceiling metal",
-    "Removing ceiling and side metal",
-    "Angle antennas underneath",
+    "Metal Casings",
+    "Antennas at an Angle",
+    "Flat Antennas with Separation",
 ]
 
 # Scenario letter -> (cup_state, driptray_state, power_label, power_mW)
 # Kept for reverse lookup so the brainstorm CSV's A–I labels still map.
+# "Full" always means liquid present (cup contains beer / driptray has liquid).
 SCENARIOS: dict[str, tuple[str, str, str, int]] = {
-    "A": ("Empty", "Empty", "Low",    30),
-    "B": ("Full",  "Empty", "Low",    30),
+    "A": ("Full",  "Empty", "Low",    30),
+    "B": ("Empty", "Full",  "Low",    30),
     "C": ("Full",  "Full",  "Low",    30),
-    "D": ("Empty", "Empty", "Medium", 170),
-    "E": ("Full",  "Empty", "Medium", 170),
+    "D": ("Full",  "Empty", "Medium", 170),
+    "E": ("Empty", "Full",  "Medium", 170),
     "F": ("Full",  "Full",  "Medium", 170),
-    "G": ("Empty", "Empty", "High",   316),
-    "H": ("Full",  "Empty", "High",   316),
+    "G": ("Full",  "Empty", "High",   316),
+    "H": ("Empty", "Full",  "High",   316),
     "I": ("Full",  "Full",  "High",   316),
 }
 
-# The three physically-meaningful cup × driptray combinations.
-# (Empty cup + Full driptray is excluded — the driptray drains.)
+# The three cup × driptray fill-state combinations we exercise.
+# "Full" indicates liquid is present.
 CUP_DRIPTRAY_COMBOS: list[tuple[str, str]] = [
-    ("Empty", "Empty"),
-    ("Full",  "Empty"),
-    ("Full",  "Full"),
+    ("Full",  "Empty"),    # drip tray empty - cup full
+    ("Empty", "Full"),     # cup empty       - drip tray full
+    ("Full",  "Full"),     # drip tray full  - cup full
 ]
 
 # Reader power levels we sweep across.
@@ -95,14 +99,36 @@ def scenario_letter_for(cup_state: str, dt_state: str, power_label: str) -> str:
             return letter
     return "?"
 
-# Single supported sub-scenario: both antennas live, one cup per side.
-# Sub-scenario 1 (only Ant1) and 2 (only Ant2) were removed because the
-# production dispenser always has both antennas running.
-SUB_ID = 3
+# Both antennas are always live (production dispenser configuration).
 SUB_ANT1_STATE = "ON"
 SUB_ANT2_STATE = "ON"
-SUB_LAYOUT = "Cup 1 on the Ant1 side, Cup 2 on the Ant2 side."
 SUB_MISREAD_RULE = "Ant1 reading Cup 2's EPC OR Ant2 reading Cup 1's EPC."
+
+# Sub-scenario id is now driven by the cup × driptray fill state, where
+# "Full" indicates liquid is present in that vessel.
+#   1: drip tray empty - cup full
+#   2: cup empty       - drip tray full
+#   3: drip tray full  - cup full
+SUB_LAYOUTS: dict[int, str] = {
+    1: "Drip tray empty, cup full (liquid in cup). Cup 1 on Ant1, Cup 2 on Ant2.",
+    2: "Cup empty, drip tray full (liquid in tray). Cup 1 on Ant1, Cup 2 on Ant2.",
+    3: "Drip tray full, cup full (liquid in both).  Cup 1 on Ant1, Cup 2 on Ant2.",
+}
+
+
+def sub_id_for(cup_state: str, dt_state: str) -> int:
+    """Map (cup_state, driptray_state) -> sub-scenario id (1/2/3, or 0 if unknown)."""
+    if cup_state == "Full" and dt_state == "Empty":
+        return 1
+    if cup_state == "Empty" and dt_state == "Full":
+        return 2
+    if cup_state == "Full" and dt_state == "Full":
+        return 3
+    return 0
+
+
+def sub_layout_for(cup_state: str, dt_state: str) -> str:
+    return SUB_LAYOUTS.get(sub_id_for(cup_state, dt_state), "Unknown sub-scenario.")
 
 CSV_HEADER = [
     "timestamp",
@@ -426,6 +452,9 @@ def print_summary(stats: dict, scenario: str, power_mW: int,
 
 
 def write_csv_row(csv_path: str, row: dict) -> None:
+    parent = os.path.dirname(csv_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     new_file = not os.path.exists(csv_path)
     with open(csv_path, "a", newline="") as f:
         w = csv.writer(f)
@@ -458,9 +487,11 @@ def write_per_test_csv(path: str, row: dict) -> None:
 # ----------------------------------------------------------------------------
 
 def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
-                 csv_path: str, runs_dir: str) -> str:
+                 csv_path: str, runs_dir: str, results_dir: str) -> str:
     (setup_idx, setup_name, scenario, cup_state, dt_state,
      power_label, power_mW) = ask_test_params()
+    sub_id = sub_id_for(cup_state, dt_state)
+    sub_layout = sub_layout_for(cup_state, dt_state)
 
     print("\n" + "-" * 64)
     print("  About to run:")
@@ -468,7 +499,7 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
     print(f"    Cup/Driptray: Cup={cup_state}, Driptray={dt_state}")
     print(f"    Power       : {power_label} = {power_mW} mW   (wrapper will pass this to ./rfid_gc_live)")
     print(f"    Antennas    : Ant1={SUB_ANT1_STATE}, Ant2={SUB_ANT2_STATE}  (both always live)")
-    print(f"    Cup layout  : {SUB_LAYOUT}")
+    print(f"    Sub-scenario: {sub_id} — {sub_layout}")
     print(f"    Misread =   : {SUB_MISREAD_RULE}")
     print(f"    Scenario tag: {scenario}   (matches '{scenario}' in your brainstorm CSV)")
     print("-" * 64)
@@ -537,8 +568,8 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
         "driptray_state": dt_state,
         "power_label": power_label,
         "power_mW": power_mW,
-        "sub": SUB_ID,
-        "sub_layout": SUB_LAYOUT,
+        "sub": sub_id,
+        "sub_layout": sub_layout,
         "window_s": round(elapsed, 1) if interrupted else int(POUR_WINDOW_S),
         "interrupted": "yes" if interrupted else "no",
         "verdict": vrd,
@@ -553,8 +584,11 @@ def run_one_test(binary: str, cup1_epc: str, cup2_epc: str,
         per_test_filename(end_ts, setup_idx, scenario, interrupted),
     )
     write_per_test_csv(per_test_path, row)
+    setup_csv_path = os.path.join(results_dir, f"{setup_name}.csv")
+    write_csv_row(setup_csv_path, row)
     print(f"  Appended to : {csv_path}")
     print(f"  Per-test CSV: {per_test_path}")
+    print(f"  Setup CSV   : {setup_csv_path}")
     return "saved"
 
 
@@ -569,6 +603,10 @@ def main() -> int:
     p.add_argument("--runs-dir", default=DEFAULT_RUNS_DIR,
                    help=f"Folder where per-test timestamped CSVs are written "
                         f"(default: {DEFAULT_RUNS_DIR}/)")
+    p.add_argument("--results-dir", default=DEFAULT_RESULTS_DIR,
+                   help=f"Folder where per-setup result CSVs live; each saved "
+                        f"row is appended to <results-dir>/<setup_name>.csv "
+                        f"(default: {DEFAULT_RESULTS_DIR}/)")
     p.add_argument("--cup1-epc", help="Skip auto-learn: provide Cup 1 EPC directly")
     p.add_argument("--cup2-epc", help="Skip auto-learn: provide Cup 2 EPC directly")
     p.add_argument("--learn-power", type=int, default=30,
@@ -587,6 +625,7 @@ def main() -> int:
     print(f"  Binary       : {args.binary}")
     print(f"  Master CSV   : {args.csv}")
     print(f"  Per-test dir : {args.runs_dir}/")
+    print(f"  Per-setup dir: {args.results_dir}/")
     print(f"  Pour window  : {POUR_WINDOW_S:.0f} s   (reader loop ~5 Hz on this hardware, "
           f"so expect ~{int(POUR_WINDOW_S * 5)} sweeps)")
     print(f"  Power map    : Low=30 mW, Medium=170 mW, High=316 mW")
@@ -610,7 +649,7 @@ def main() -> int:
 
         while True:
             result = run_one_test(args.binary, cup1_epc, cup2_epc,
-                                  args.csv, args.runs_dir)
+                                  args.csv, args.runs_dir, args.results_dir)
             if result == "retry":
                 continue
             again = input("\n  Run another test? [Y/n]: ").strip().lower()

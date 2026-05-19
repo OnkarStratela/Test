@@ -1,32 +1,24 @@
 Beer Pour Testing,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,
 Setups to Test,,,,,,Results Table,,,,,,,,,,,
-2 fins underneath,,,,,,,,Ant1,,,,Ant2,,,,Reliability,
-Removing ceiling metal,,,,,,Scenario,Sub Scenario,Cup 1 (Average RSSI),Cup 1 Count per 20,Cup 2 (Average RSSI),Cup 2 Count per 20,Cup 1 (Average RSSI),Cup 1 Count per 20,Cup 2 (Average RSSI),Cup 2 Count per 20,Misreads,Overlaps
-Removing ceiling and side metal,,,,,,A,1,,,,,,,,,20,0
-Angle antennas underneath,,,,,,A,2,,,,,,,,,20,0
-,,,,,,A,3,,,,,,,,,40,0
-Scenarios to test for each setup,,,,,,B,1,,,,,,,,,20,0
-,Cup,Driptray,Power,,,B,2,,,,,,,,,20,0
-A,Empty,Empty,Low,,,B,3,,,,,,,,,40,0
-B,Full,Empty,Low,,,C,1,,,,,,,,,20,0
-C,Full,Full,Low,,,C,2,,,,,,,,,20,0
-D,Empty,Empty,Medium,,,C,3,,,,,,,,,40,0
-E,Full,Empty,Medium,,,D,1,,,,,,,,,20,0
-F,Full,Full,Medium,,,D,2,,,,,,,,,20,0
-G,Empty,Empty,High,,,D,3,,,,,,,,,40,0
-H,Full,Empty,High,,,E,1,,,,,,,,,20,0
-I,Full,Full,High,,,E,2,,,,,,,,,20,0
-,,,,,,E,3,,,,,,,,,40,0
-Sub Scenarios,,,,,,F,1,,,,,,,,,20,0
-,Cup 1,Cup 2,,,,F,2,,,,,,,,,20,0
-1,Ant1,Off,,,,F,3,,,,,,,,,40,0
-2,Off,Ant2,,,,G,1,,,,,,,,,20,0
-3,Ant1,Ant2,,,,G,2,,,,,,,,,20,0
-,,,,,,G,3,,,,,,,,,40,0
-,,,,,,H,1,,,,,,,,,20,0
-,,,,,,H,2,,,,,,,,,20,0
-,,,,,,H,3,,,,,,,,,40,0
-,,,,,,I,1,,,,,,,,,20,0
-,,,,,,I,2,,,,,,,,,20,0
-,,,,,,I,3,,,,,,,,,40,0
+Metal Casings,,,,,,,,Ant1,,,,Ant2,,,,Reliability,
+Antennas at an Angle,,,,,,Scenario,Sub Scenario,Cup 1 (Average RSSI),Cup 1 Count per 20,Cup 2 (Average RSSI),Cup 2 Count per 20,Cup 1 (Average RSSI),Cup 1 Count per 20,Cup 2 (Average RSSI),Cup 2 Count per 20,Misreads,Overlaps
+Flat Antennas with Separation,,,,,,A,1,,,,,,,,,40,0
+,,,,,,B,2,,,,,,,,,40,0
+Scenarios to test for each setup,,,,,,C,3,,,,,,,,,40,0
+,Cup,Driptray,Power,,,D,1,,,,,,,,,40,0
+A,Full,Empty,Low,,,E,2,,,,,,,,,40,0
+B,Empty,Full,Low,,,F,3,,,,,,,,,40,0
+C,Full,Full,Low,,,G,1,,,,,,,,,40,0
+D,Full,Empty,Medium,,,H,2,,,,,,,,,40,0
+E,Empty,Full,Medium,,,I,3,,,,,,,,,40,0
+F,Full,Full,Medium,,,,,,,,,,,,,,
+G,Full,Empty,High,,,,,,,,,,,,,,
+H,Empty,Full,High,,,,,,,,,,,,,,
+I,Full,Full,High,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,
+Sub Scenarios,,,,,,,,,,,,,,,,,
+,Cup,Driptray,,,,,,,,,,,,,,,
+1,Full,Empty,,,,,,,,,,,,,,,
+2,Empty,Full,,,,,,,,,,,,,,,
+3,Full,Full,,,,,,,,,,,,,,,
