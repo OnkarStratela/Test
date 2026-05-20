@@ -1,0 +1,2 @@
+timestamp,setup_idx,setup_name,scenario,cup_state,driptray_state,power_label,power_mW,sub,sub_layout,window_s,total_sweeps,cup1_ant1_reads,cup1_ant1_avg_rssi,cup1_ant2_reads,cup1_ant2_avg_rssi,cup2_ant1_reads,cup2_ant1_avg_rssi,cup2_ant2_reads,cup2_ant2_avg_rssi,misreads,overlaps,interrupted,verdict,cup1_epc,cup2_epc,notes
+2026-05-20T14:35:16,3,Flat Antennas with Separation,L,Empty,Empty,High,316,4,"Drip tray empty, cup empty (no liquid).     Cup 1 on Ant1, Cup 2 on Ant2.",15,76,76,-45.67,0,,0,,76,-60.73,0,0,no,PASS,E2801191A5040076596E6F76,E2801191A5040076596E6FD6,
