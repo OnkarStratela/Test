@@ -482,6 +482,37 @@ def write_per_test_csv(path: str, row: dict) -> None:
         w.writerow([row.get(k, "") for k in CSV_HEADER])
 
 
+def count_setup_tests(results_dir: str) -> dict[str, int]:
+    """Return {setup_name: number_of_saved_tests} from results/<setup>.csv files."""
+    counts: dict[str, int] = {}
+    for setup_name in SETUPS:
+        path = os.path.join(results_dir, f"{setup_name}.csv")
+        if os.path.exists(path):
+            with open(path, "r", newline="") as f:
+                # Subtract 1 for the header row; clamp at 0 for empty files.
+                counts[setup_name] = max(0, sum(1 for _ in f) - 1)
+        else:
+            counts[setup_name] = 0
+    return counts
+
+
+def print_setup_test_counts(results_dir: str) -> None:
+    """Print a summary of how many tests have been saved per setup."""
+    counts = count_setup_tests(results_dir)
+    total = sum(counts.values())
+    width = max((len(name) for name in counts), default=0)
+    print()
+    print("=" * 64)
+    print(f"  Tests performed per setup ({results_dir}/)")
+    print("=" * 64)
+    for setup_name, n in counts.items():
+        suffix = "test" if n == 1 else "tests"
+        print(f"  {setup_name:<{width}} : {n} {suffix}")
+    print("-" * 64)
+    print(f"  {'Total':<{width}} : {total} {'test' if total == 1 else 'tests'}")
+    print("=" * 64)
+
+
 # ----------------------------------------------------------------------------
 # Main loop
 # ----------------------------------------------------------------------------
@@ -660,8 +691,10 @@ def main() -> int:
 
     except KeyboardInterrupt:
         print("\nInterrupted. Bye.")
+        print_setup_test_counts(args.results_dir)
         return 130
 
+    print_setup_test_counts(args.results_dir)
     print("\nDone.")
     return 0
 
