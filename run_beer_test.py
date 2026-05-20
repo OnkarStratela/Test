@@ -75,14 +75,18 @@ SCENARIOS: dict[str, tuple[str, str, str, int]] = {
     "G": ("Full",  "Empty", "High",   316),
     "H": ("Empty", "Full",  "High",   316),
     "I": ("Full",  "Full",  "High",   316),
+    "J": ("Empty", "Empty", "Low",    30),
+    "K": ("Empty", "Empty", "Medium", 170),
+    "L": ("Empty", "Empty", "High",   316),
 }
 
-# The three cup × driptray fill-state combinations we exercise.
+# The cup × driptray fill-state combinations we exercise.
 # "Full" indicates liquid is present.
 CUP_DRIPTRAY_COMBOS: list[tuple[str, str]] = [
     ("Full",  "Empty"),    # drip tray empty - cup full
     ("Empty", "Full"),     # cup empty       - drip tray full
     ("Full",  "Full"),     # drip tray full  - cup full
+    ("Empty", "Empty"),    # drip tray empty - cup empty (no liquid anywhere)
 ]
 
 # Reader power levels we sweep across.
@@ -109,21 +113,25 @@ SUB_MISREAD_RULE = "Ant1 reading Cup 2's EPC OR Ant2 reading Cup 1's EPC."
 #   1: drip tray empty - cup full
 #   2: cup empty       - drip tray full
 #   3: drip tray full  - cup full
+#   4: drip tray empty - cup empty  (no liquid anywhere)
 SUB_LAYOUTS: dict[int, str] = {
     1: "Drip tray empty, cup full (liquid in cup). Cup 1 on Ant1, Cup 2 on Ant2.",
     2: "Cup empty, drip tray full (liquid in tray). Cup 1 on Ant1, Cup 2 on Ant2.",
     3: "Drip tray full, cup full (liquid in both).  Cup 1 on Ant1, Cup 2 on Ant2.",
+    4: "Drip tray empty, cup empty (no liquid).     Cup 1 on Ant1, Cup 2 on Ant2.",
 }
 
 
 def sub_id_for(cup_state: str, dt_state: str) -> int:
-    """Map (cup_state, driptray_state) -> sub-scenario id (1/2/3, or 0 if unknown)."""
+    """Map (cup_state, driptray_state) -> sub-scenario id (1/2/3/4, or 0 if unknown)."""
     if cup_state == "Full" and dt_state == "Empty":
         return 1
     if cup_state == "Empty" and dt_state == "Full":
         return 2
     if cup_state == "Full" and dt_state == "Full":
         return 3
+    if cup_state == "Empty" and dt_state == "Empty":
+        return 4
     return 0
 
 
