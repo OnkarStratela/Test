@@ -295,7 +295,7 @@ class RFIDReader:
 # EPC auto-learn
 # ----------------------------------------------------------------------------
 
-def learn_epc(binary: str, label: str, learn_power_mW: int = 30) -> str:
+def learn_epc(binary: str, label: str, learn_power_mW: int = 316) -> str:
     """Spawn the reader, sniff EPCs for EPC_LEARN_WINDOW_S, return dominant EPC."""
     while True:
         print(f"\n  Place ONLY {label} on the antenna tray, remove the other cup.")
@@ -609,8 +609,10 @@ def main() -> int:
                         f"(default: {DEFAULT_RESULTS_DIR}/)")
     p.add_argument("--cup1-epc", help="Skip auto-learn: provide Cup 1 EPC directly")
     p.add_argument("--cup2-epc", help="Skip auto-learn: provide Cup 2 EPC directly")
-    p.add_argument("--learn-power", type=int, default=30,
-                   help="Power (mW) used during EPC auto-learn (default: 30)")
+    p.add_argument("--learn-power", type=int, default=316,
+                   help="Power (mW) used during EPC auto-learn (default: 316, "
+                        "the reader's max — gives the best chance of locking "
+                        "weak/marginal tags before the real test)")
     args = p.parse_args()
 
     if not os.path.exists(args.binary):
